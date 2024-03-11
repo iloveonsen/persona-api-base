@@ -18,7 +18,7 @@ class UserPersona(SQLModel, table=True):
     created_at: datetime.datetime = Field(default_factory=datetime.datetime.utcnow)
 
 
-engine = create_async_engine(config.db_url, echo=True)
+engine = create_async_engine(config.db_url, echo=False)
 
 
 AsyncSessionLocal = sessionmaker(

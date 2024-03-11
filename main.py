@@ -4,17 +4,18 @@ from fastapi import FastAPI
 from fastapi.responses import Response, JSONResponse, PlainTextResponse
 from loguru import logger
 from sqlmodel import SQLModel
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession    
 
 import os
 import json
 
 from api import router
-from database import engine
+from database import engine, UserPersona
 from model import load_model, load_embeddings
 
 
-tokenizer, model = None, None
+device, tokenizer, model = None, None, None
 embeddings = None
 
 
@@ -24,12 +25,16 @@ async def lifespan(app: FastAPI):
 
     logger.info("Creating database connection")
     async with engine.begin() as conn:
-        await conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        try:
+            await conn.run_sync(SQLModel.metadata.create_all)
+            logger.info("Table created")
+        except Exception as e:
+            logger.error(f"Error creating table: {e}")
 
     logger.info(f"Load model {os.environ.get('MODEL_NAME', 'alaggung/bart-r3f')}")
-    global tokenizer, model
-    tokenizer, model = load_model()
+    global device, tokenizer, model
+    device, tokenizer, model = load_model()
 
     logger.info("Load embeddings")
     global embeddings
@@ -43,7 +48,7 @@ async def lifespan(app: FastAPI):
     await engine.dispose()
     
 
-app = FastAPI()
+app = FastAPI(lifespan=lifespan)
 app.include_router(router=router)
 
 
@@ -55,4 +60,4 @@ def root():
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("main:app", host="localhost", port=8001, reload=True)
+    uvicorn.run("main:app", host="localhost", port=8002, reload=True) # 8001 for redis stack

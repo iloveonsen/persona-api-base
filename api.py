@@ -23,13 +23,13 @@ async def predict(request: PredictRequest,
                   tokenizer_and_model: tuple = Depends(load_model), 
                   embeddings: Embeddings = Depends(load_embeddings),
                   db: AsyncSession = Depends(get_db_session)) -> Response:
-    tokenizer, model = tokenizer_and_model
+    device, tokenizer, model = tokenizer_and_model
     embeddings = embeddings
 
-    predictions = make_prediction(request.user_inputs, tokenizer, model)
-    predictions = predictions.split(",")
+    predictions = make_prediction(request.user_inputs, device, tokenizer, model)
+    predictions = [prediction.strip() for prediction in predictions.split(".") if prediction]
 
-    embeds = make_embeds(request.user_inputs, embeddings)
+    embeds = make_embeds(predictions, embeddings)
 
     user_personas = [
         UserPersona(username=request.username, persona=prediction, embedding=embed)
@@ -43,8 +43,7 @@ async def predict(request: PredictRequest,
 
 
 
-
-@router.get("/persona")
+@router.post("/persona")
 async def get_persona(request: UserPersonaRequest, 
                       embeddings: Embeddings = Depends(load_embeddings),
                       db: AsyncSession = Depends(get_db_session)) -> List[UserPersonaResponse]:
@@ -57,7 +56,7 @@ async def get_persona(request: UserPersonaRequest,
     result = await db.execute(
         select(UserPersona)
         .filter(UserPersona.username == request.username)
-        .order_by(UserPersona.consine_distance(user_input_embed))
+        .order_by(UserPersona.embedding.cosine_distance(user_input_embed))
         .limit(request.top_k)
     )
     user_personas = result.scalars().all()
@@ -73,13 +72,33 @@ async def get_persona(request: UserPersonaRequest,
 
 
 
+@router.get("/persona/{username}")
+async def get_persona_by_username(username: str, 
+                                  db: AsyncSession = Depends(get_db_session)) -> List[UserPersonaResponse]:
+    result = await db.execute(
+        select(UserPersona)
+        .filter(UserPersona.username == username)
+    )
+    user_personas = result.scalars().all()
+
+    if not user_personas:
+        return PlainTextResponse(f"No persona found for this user {username}", status_code=404)
+    return [
+        UserPersonaResponse(
+            persona=user_persona.persona,
+        )
+        for user_persona in user_personas
+    ]
+
+
+
 # maintain single connection from generation app
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket,
                              tokenizer_and_model: tuple = Depends(load_model), 
                              embeddings: Embeddings = Depends(load_embeddings),
                              db: AsyncSession = Depends(get_db_session)):
-    tokenizer, model = tokenizer_and_model
+    device, tokenizer, model = tokenizer_and_model
     embeddings = embeddings
 
     await websocket.accept()
@@ -87,16 +106,19 @@ async def websocket_endpoint(websocket: WebSocket,
 
     try:
         while True:
-            data = await websocket.receive_text()
-            message = json.loads(data)  # Parse the JSON message
+            message = await websocket.receive_json() # automatically parse json
+
+            print(f"\nMessage: {message}\n")
 
             # from post("/predict")
             if message["type"] == "post_predict":
                 # Prepare some summary to send back
-                predictions = make_prediction(message["user_inputs"], tokenizer, model)
-                predictions = predictions.split(",")
+                predictions = make_prediction(message["user_inputs"], device, tokenizer, model)
+                predictions = [prediction.strip() for prediction in predictions.split(".") if prediction] # change to , based on the model output
 
-                embeds = make_embeds(message["user_inputs"], embeddings)
+                print(f"\nSummarized persona list: {predictions}\n")
+
+                embeds = make_embeds(predictions, embeddings)
 
                 user_personas = [
                     UserPersona(username=message["username"], persona=prediction, embedding=embed)
@@ -113,12 +135,12 @@ async def websocket_endpoint(websocket: WebSocket,
                 result = await db.execute(
                     select(UserPersona)
                     .filter(UserPersona.username == message["username"])
-                    .order_by(UserPersona.consine_distance(user_input_embed))
+                    .order_by(UserPersona.embedding.cosine_distance(user_input_embed))
                     .limit(message["top_k"])
                 )
                 user_personas = result.scalars().all()
                 user_personas = [{"persona": user_persona.persona} for user_persona in user_personas]
-                await websocket.send_text(json.dumps(user_personas))
+                await websocket.send_json(user_personas)
 
     except WebSocketDisconnect:
         logger.info("WebSocket client disconnected")

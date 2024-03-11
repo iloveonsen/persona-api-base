@@ -28,7 +28,7 @@ def load_model():
 
     model = AutoModelForCausalLM.from_pretrained(model_name).to(device)
 
-    return tokenizer, model
+    return device, tokenizer, model
 
 
 def load_embeddings():
@@ -41,11 +41,12 @@ def load_embeddings():
     return embeddings
 
 
-def make_prediction(text: List[str], tokenizer: AutoTokenizer, model: AutoModelForCausalLM) -> str:
+def make_prediction(text: List[str], device: torch.device, tokenizer: AutoTokenizer, model: AutoModelForCausalLM) -> str:
     concat_text = "[BOS]" + "[SEP]".join(text) + "[EOS]"
-    input_ids = tokenizer.encode(concat_text, return_tensors="pt")
+    input_ids = tokenizer.encode(concat_text, return_tensors="pt").to(device)
     
-    outputs = model.generate(input_ids, max_new_tokens=20, do_sample=True, top_k=5, top_p=0.95, temperature=0.7)
+    outputs = model.generate(input_ids, max_new_tokens=20, do_sample=True, 
+                             top_k=5, top_p=0.95, temperature=0.7).detach().cpu().numpy()
     summary = tokenizer.batch_decode(outputs, skip_special_tokens=True)[0]
     return summary
 
