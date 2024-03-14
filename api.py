@@ -11,7 +11,7 @@ import json
 
 
 from schemas import PredictRequest, UserPersonaRequest, UserPersonaResponse
-from model import load_model, load_embeddings, make_prediction, make_embeds, make_embed
+from model import get_model, get_embeddings, make_prediction, make_embeds, make_embed
 from database import UserPersona, engine, get_db_session
 
 
@@ -20,11 +20,10 @@ router = APIRouter()
 
 @router.post("/predict")
 async def predict(request: PredictRequest, 
-                  tokenizer_and_model: tuple = Depends(load_model), 
-                  embeddings: Embeddings = Depends(load_embeddings),
+                  tokenizer_and_model: tuple = Depends(get_model), 
+                  embeddings: Embeddings = Depends(get_embeddings),
                   db: AsyncSession = Depends(get_db_session)) -> Response:
     device, tokenizer, model = tokenizer_and_model
-    embeddings = embeddings
 
     predictions = make_prediction(request.user_inputs, device, tokenizer, model)
     predictions = [prediction.strip() for prediction in predictions.split(".") if prediction]
@@ -45,10 +44,8 @@ async def predict(request: PredictRequest,
 
 @router.post("/persona")
 async def get_persona(request: UserPersonaRequest, 
-                      embeddings: Embeddings = Depends(load_embeddings),
+                      embeddings: Embeddings = Depends(get_embeddings),
                       db: AsyncSession = Depends(get_db_session)) -> List[UserPersonaResponse]:
-    embeddings = embeddings
-
     user_input_embed = make_embed(request.user_input, embeddings) 
 
     # https://github.com/pgvector/pgvector-python/blob/master/README.md#sqlmodel
@@ -95,8 +92,8 @@ async def get_persona_by_username(username: str,
 # maintain single connection from generation app
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket,
-                             tokenizer_and_model: tuple = Depends(load_model), 
-                             embeddings: Embeddings = Depends(load_embeddings),
+                             tokenizer_and_model: tuple = Depends(get_model), 
+                             embeddings: Embeddings = Depends(get_embeddings),
                              db: AsyncSession = Depends(get_db_session)):
     device, tokenizer, model = tokenizer_and_model
     embeddings = embeddings
@@ -141,6 +138,7 @@ async def websocket_endpoint(websocket: WebSocket,
                 user_personas = result.scalars().all()
                 user_personas = [{"persona": user_persona.persona} for user_persona in user_personas]
                 await websocket.send_json(user_personas)
+                print("\nSent user personas\n")
 
     except WebSocketDisconnect:
         logger.info("WebSocket client disconnected")

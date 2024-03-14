@@ -14,21 +14,31 @@ from langchain_openai import OpenAIEmbeddings
 import torch
 
 load_dotenv()
+
+
+device, tokenizer, model = None, None, None
+embeddings = None
  
 
 def load_model():
     model_name = os.environ.get("MODEL_NAME", "alaggung/bart-r3f")
 
+    global device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     config = AutoConfig.from_pretrained(model_name)
     config.max_length = 256
 
+    global tokenizer
     tokenizer = AutoTokenizer.from_pretrained(model_name)
 
+    global model
     model = AutoModelForCausalLM.from_pretrained(model_name).to(device)
 
+
+def get_model():
     return device, tokenizer, model
+
 
 
 def load_embeddings():
@@ -37,7 +47,11 @@ def load_embeddings():
     if api_key is None:
         raise ValueError("Please set OPENAI_API_KEY environment variable")
 
+    global embeddings
     embeddings = OpenAIEmbeddings(api_key=api_key)
+
+
+def get_embeddings():
     return embeddings
 
 

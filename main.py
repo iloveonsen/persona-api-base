@@ -15,8 +15,6 @@ from database import engine, UserPersona
 from model import load_model, load_embeddings
 
 
-device, tokenizer, model = None, None, None
-embeddings = None
 
 
 @asynccontextmanager
@@ -33,12 +31,10 @@ async def lifespan(app: FastAPI):
             logger.error(f"Error creating table: {e}")
 
     logger.info(f"Load model {os.environ.get('MODEL_NAME', 'alaggung/bart-r3f')}")
-    global device, tokenizer, model
-    device, tokenizer, model = load_model()
+    load_model()
 
     logger.info("Load embeddings")
-    global embeddings
-    embeddings = load_embeddings()
+    load_embeddings()
 
     # The server starts to recieve requests after yield
     yield
